@@ -40,8 +40,12 @@
  public class PhotonvisonConstants {
      public static class Vision {
          public static final String kCameraName = "OV9281";
+         public static final String RightName = "ov9281Right";
          // Cam mounted facing forward, half a meter forward of center, half a meter up from center.
          public static final Transform3d kRobotToCam =
+                new Transform3d(new Translation3d(0.5, 0.0, 0.5), new Rotation3d(0, Math.toRadians(0), 0));
+
+        public static final Transform3d kRobotToRightCam =
                 new Transform3d(new Translation3d(0.5, 0.0, 0.5), new Rotation3d(0, Math.toRadians(0), 0));
  
          // The layout of the AprilTags on the field

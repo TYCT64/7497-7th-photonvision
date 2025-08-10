@@ -53,7 +53,11 @@ public class Apriltag_cmd  extends Command{
         xController.setSetpoint(Xmeter);
         yController.setSetpoint(Ymeter);
         RotationController.setSetpoint(0);
+        
 
+        xController.setTolerance(Xok);
+        yController.setTolerance(Yok);
+        RotationController.setTolerance(RotationokOk);
         
     }
 
@@ -64,17 +68,17 @@ public class Apriltag_cmd  extends Command{
     @Override
     public void execute(){
 
-        Transform3d target = visionSubsystem.getBestTargetTransform();
+        Transform3d target = visionSubsystem.getBestTarget();
         
 
-        if(!visionSubsystem.getLatestResult().hasTargets() || target == null){
+        if(target == null){
             swerveSubsystem.drive(new Translation2d( 0, 0) , 0 , false , false);
             return;
         }
 
         double Xerror = target.getX();
         double Yerror = target.getY();
-        double RotationError = visionSubsystem.getLatestResult().getBestTarget().getYaw();
+        double RotationError = target.getRotation().getZ() *(180 / Math.PI);
         
         double Xspeed = xController.calculate(Xerror);
         double Yspeed = yController.calculate(Yerror);
@@ -105,23 +109,16 @@ public class Apriltag_cmd  extends Command{
 
     @Override
     public boolean isFinished(){
-        if(!visionSubsystem.getLatestResult().hasTargets()){
-            return true;
-        }
+      
 
-        Transform3d target = visionSubsystem.getBestTargetTransform();
+        Transform3d target = visionSubsystem.getBestTarget();
         if (target == null) {
             return false;
         }
 
-        double Xerror = target.getX();
-        double Yerror = target.getY();
-        double RotationError = visionSubsystem.getLatestResult().getBestTarget().getYaw();
-        boolean Xalign = Math.abs(Xerror - Xmeter) < Xok ;
-        boolean Yalign = Math.abs(Yerror - Ymeter) < Yok;
-        boolean RotationAlign = Math.abs(RotationError) < RotationokOk;
+      
 
-        return Xalign && Yalign && RotationAlign;
+        return xController.atSetpoint() && yController.atSetpoint() && RotationController.atSetpoint();
     }
 
 

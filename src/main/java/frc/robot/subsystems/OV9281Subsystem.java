@@ -20,28 +20,47 @@ import edu.wpi.first.math.Matrix;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 
 public class OV9281Subsystem extends SubsystemBase {
-    private final PhotonCamera camera; // webUI記得設定成一樣的 不然不會有數據
-    private PhotonPipelineResult latestResult;
+    private final PhotonCamera LeftCamera; // webUI記得設定成一樣的 不然不會有數據
+    private final PhotonCamera RightCamera;
+    private PhotonPipelineResult LeftLatestResult;
+    private PhotonPipelineResult RightLatestResult;
     private final EstimateConsumer estConsumer;
-    private final PhotonPoseEstimator photonEstimator;
+    private final PhotonPoseEstimator LeftphotonEstimator;
+    private final PhotonPoseEstimator RightphotonEstimator;
     private Matrix<N3, N1> curStdDevs;
 
     public OV9281Subsystem(EstimateConsumer estConsumer) {
         this.estConsumer = estConsumer;
-        camera = new PhotonCamera(kCameraName);
+        LeftCamera = new PhotonCamera(kCameraName);
+        RightCamera = new PhotonCamera(RightName);
 
-        photonEstimator = new PhotonPoseEstimator(kTagLayout, PoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR, kRobotToCam);
-        photonEstimator.setMultiTagFallbackStrategy(PoseStrategy.LOWEST_AMBIGUITY);
+        LeftphotonEstimator = new PhotonPoseEstimator(kTagLayout, PoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR, kRobotToCam);
+        LeftphotonEstimator.setMultiTagFallbackStrategy(PoseStrategy.LOWEST_AMBIGUITY);
+
+        RightphotonEstimator = new PhotonPoseEstimator(kTagLayout, PoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR, kRobotToRightCam);
+        RightphotonEstimator.setMultiTagFallbackStrategy(PoseStrategy.LOWEST_AMBIGUITY);
+        
     }
 
     @Override
     public void periodic() {
-        latestResult = camera.getLatestResult();
+        LeftLatestResult = LeftCamera.getLatestResult();
+        RightLatestResult = RightCamera.getLatestResult();
+     
+        // Transform3d target = getBestTargetTransform();
+        // double Xerror = 0;
+        // double Yerror = 0;
+        // double RotationError = 0;
+        // if(!latestResult.isEmpty()){
+        //     Xerror = target.getX();
+        //     Yerror = target.getY();
+        //     RotationError = getLatestResult().getBestTarget().getYaw();
+        // }
 
         Optional<EstimatedRobotPose> visionEst = Optional.empty();
-        for (var change : camera.getAllUnreadResults()) {
-            visionEst = photonEstimator.update(change);
-            updateEstimationStdDevs(visionEst, change.getTargets());
+        for (var change : LeftCamera.getAllUnreadResults()) {
+            visionEst = LeftphotonEstimator.update(change);
+            updateEstimationStdDevs(visionEst, change.getTargets() , LeftphotonEstimator);
 
             visionEst.ifPresent(
                     est -> {
@@ -49,31 +68,65 @@ public class OV9281Subsystem extends SubsystemBase {
                         estConsumer.accept(est.estimatedPose.toPose2d(), est.timestampSeconds, estStdDevs);
                     });
         }
+
+
+        for (var change : RightCamera.getAllUnreadResults()) {
+            visionEst = RightphotonEstimator.update(change);
+            updateEstimationStdDevs(visionEst, change.getTargets() , RightphotonEstimator);
+
+            visionEst.ifPresent(
+                    est -> {
+                        var estStdDevs = getEstimationStdDevs();
+                        estConsumer.accept(est.estimatedPose.toPose2d(), est.timestampSeconds, estStdDevs);
+                    });
+        }
+        
         visionEst.ifPresent(est -> SmartDashboard.putString("Vision Pose", est.estimatedPose.toPose2d().toString()));
-        SmartDashboard.putString("Vision StdDevs", getEstimationStdDevs().toString());
+        // SmartDashboard.putString("Vision StdDevs", getEstimationStdDevs().toString());
+        // SmartDashboard.putNumber("AprilTag_Target_X_Error", Xerror);
+        // SmartDashboard.putNumber("AprilTag_Target_Y_Error", Yerror);
+        // SmartDashboard.putNumber("AprilTag_Target_Yaw_Error", RotationError);
     }
 
-    public PhotonPipelineResult getLatestResult() {
-        return latestResult;
+    public PhotonPipelineResult getLeftLatestResult() {
+        return LeftLatestResult;
     }
 
-    public Transform3d getBestTargetTransform() {
-        if (latestResult.hasTargets()) {
-            PhotonTrackedTarget target = latestResult.getBestTarget();
+    public PhotonPipelineResult getRightLatestResult(){
+        return RightLatestResult;
+    }
+    public Transform3d getLeftBestTargetTransform() {
+        if (LeftLatestResult.hasTargets()) {
+            PhotonTrackedTarget target = LeftLatestResult.getBestTarget();
             return target.getBestCameraToTarget();
         }
         return null;
     }
 
-    public int getBestTargetId() {
-        if (latestResult.hasTargets()) {
-            return latestResult.getBestTarget().getFiducialId();
+    public Transform3d getRightBestTargetTransform() {
+        if (RightLatestResult.hasTargets()) {
+            PhotonTrackedTarget target = RightLatestResult.getBestTarget();
+            return target.getBestCameraToTarget();
+        }
+        return null;
+    }
+
+    public int getLeftBestTargetId() {
+        if (LeftLatestResult.hasTargets()) {
+            return LeftLatestResult.getBestTarget().getFiducialId();
+        }
+        return -1;
+    }
+
+    public int getRightBestTargetId() {
+        if (RightLatestResult.hasTargets()) {
+            return RightLatestResult.getBestTarget().getFiducialId();
         }
         return -1;
     }
     
     private void updateEstimationStdDevs(
-            Optional<EstimatedRobotPose> estimatedPose, List<PhotonTrackedTarget> targets) {
+            Optional<EstimatedRobotPose> estimatedPose, List<PhotonTrackedTarget> targets , PhotonPoseEstimator estimator) {
         if (estimatedPose.isEmpty()) {
             curStdDevs = kSingleTagStdDevs;
         } else {
@@ -82,7 +135,7 @@ public class OV9281Subsystem extends SubsystemBase {
             double avgDist = 0;
 
             for (var tgt : targets) {
-                var tagPose = photonEstimator.getFieldTags().getTagPose(tgt.getFiducialId());
+                var tagPose = estimator.getFieldTags().getTagPose(tgt.getFiducialId());
                 if (tagPose.isEmpty()) continue;
                 numTags++;
                 avgDist += tagPose.get().toPose2d().getTranslation()
@@ -100,6 +153,26 @@ public class OV9281Subsystem extends SubsystemBase {
                 curStdDevs = estStdDevs;
             }
         }
+    }
+
+    public Transform3d getBestTarget(){
+        Transform3d left = getLeftBestTargetTransform();
+        Transform3d right = getRightBestTargetTransform();
+
+        
+        if(left != null && right != null){
+            if(left.getTranslation().getNorm() < right.getTranslation().getNorm()){
+                return left;
+            }else{
+                return right;
+            }
+        }else if(left != null){
+            return left;
+        }else if(right != null){
+            return right;
+        }
+
+        return null;
     }
 
     public Matrix<N3, N1> getEstimationStdDevs() {
